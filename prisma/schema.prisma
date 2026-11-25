@@ -24,9 +24,14 @@ model Merchant {
   // (that endpoint isn't Stripe, so it needs its own auth). Generated at onboarding,
   // shown once in the response, encrypted the same way as the keys above.
   encryptedDeliveryProofToken String
+  // Platform-side billing (OUR Stripe account, not the merchant's): set once the
+  // merchant has a payment method on file for the success fee. Null until then.
+  platformStripeCustomerId     String?    @unique
+  platformPaymentMethodId      String?
   createdAt               DateTime   @default(now())
   updatedAt               DateTime   @updatedAt
   disputes                Dispute[]
+  successFees             SuccessFee[]
 
   @@map("merchants")
 }
@@ -49,6 +54,7 @@ model Dispute {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   evidence         EvidenceSnapshot?
+  successFee       SuccessFee?
 
   @@index([merchantId])
   @@map("disputes")
@@ -75,4 +81,25 @@ model EvidenceSnapshot {
   collectedAt     DateTime @default(now())
 
   @@map("evidence_snapshots")
+}
+
+// One row per dispute won — the ~25% success fee charged on OUR Stripe account
+// against the merchant's saved payment method (never the merchant's own account).
+model SuccessFee {
+  id                    String    @id @default(uuid())
+  dispute               Dispute   @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  disputeId             String    @unique
+  merchant              Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId            String
+  amount                Int
+  currency              String
+  // pending | succeeded | failed | no_payment_method
+  status                String
+  stripePaymentIntentId String?   @unique
+  failureReason         String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([merchantId])
+  @@map("success_fees")
 }
