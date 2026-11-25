@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { encryptSecret } from "@/lib/crypto";
@@ -26,19 +27,28 @@ export async function POST(request: NextRequest) {
 
   const { name, contactEmail, stripeApiKey, webhookSecret } = parsed.data;
 
+  // Shown once, in this response only — the merchant's own app needs it to call
+  // the delivery-proof endpoint below. We only ever store its encrypted form.
+  const deliveryProofToken = randomBytes(32).toString("hex");
+
   const merchant = await prisma.merchant.create({
     data: {
       name,
       contactEmail,
       encryptedStripeApiKey: encryptSecret(stripeApiKey),
       encryptedWebhookSecret: encryptSecret(webhookSecret),
+      encryptedDeliveryProofToken: encryptSecret(deliveryProofToken),
     },
     select: { id: true, name: true, contactEmail: true, createdAt: true },
   });
 
   const webhookUrl = `${process.env.APP_BASE_URL}/api/webhooks/stripe/${merchant.id}`;
+  const deliveryProofUrl = `${process.env.APP_BASE_URL}/api/merchants/${merchant.id}/delivery-proof`;
 
-  return NextResponse.json({ merchant, webhookUrl }, { status: 201 });
+  return NextResponse.json(
+    { merchant, webhookUrl, deliveryProofUrl, deliveryProofToken },
+    { status: 201 }
+  );
 }
 
 export async function GET() {

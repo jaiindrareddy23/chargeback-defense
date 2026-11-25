@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 function formatMoney(amountCents: number, currency: string) {
@@ -22,7 +23,9 @@ async function DisputesTable() {
     orderBy: { createdAt: "desc" },
     include: {
       merchant: { select: { name: true } },
-      evidence: { select: { id: true, customerEmail: true, receiptUrl: true } },
+      evidence: {
+        select: { id: true, customerEmail: true, receiptUrl: true, narrative: true, narrativeApprovedAt: true },
+      },
     },
   });
 
@@ -42,12 +45,17 @@ async function DisputesTable() {
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Evidence due</th>
               <th className="px-4 py-2">Evidence</th>
+              <th className="px-4 py-2">Narrative</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {disputes.map((d) => (
               <tr key={d.id}>
-                <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-100">{d.merchant.name}</td>
+                <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-100">
+                  <Link href={`/disputes/${d.id}`} className="hover:underline">
+                    {d.merchant.name}
+                  </Link>
+                </td>
                 <td className="px-4 py-2">{formatMoney(d.amount, d.currency)}</td>
                 <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{d.reason.replaceAll("_", " ")}</td>
                 <td className="px-4 py-2">
@@ -61,11 +69,18 @@ async function DisputesTable() {
                 <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
                   {d.evidence ? (d.evidence.customerEmail ?? "collected") : "pending"}
                 </td>
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                  {d.evidence?.narrativeApprovedAt
+                    ? "approved"
+                    : d.evidence?.narrative
+                      ? "needs review"
+                      : "—"}
+                </td>
               </tr>
             ))}
             {disputes.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
                   No disputes yet. Onboard a merchant via POST /api/merchants, then point
                   their Stripe webhook at /api/webhooks/stripe/[merchantId].
                 </td>

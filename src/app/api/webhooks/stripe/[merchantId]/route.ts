@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { stripeClientForMerchant } from "@/lib/stripe";
 import { decryptSecret } from "@/lib/crypto";
 import { collectEvidence } from "@/lib/evidence";
+import { draftAndSaveNarrative } from "@/lib/narrative";
 
 type RouteParams = { merchantId: string };
 
@@ -77,6 +78,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<RoutePar
     // The dispute itself is recorded; a failed evidence pull shouldn't make Stripe
     // re-send the whole webhook. Log it and let it be retried manually later.
     console.error(`Evidence collection failed for dispute ${dispute.id}:`, err);
+  }
+
+  try {
+    // First-pass draft from whatever evidence we have; it's regenerated once the
+    // merchant's own delivery-proof webhook lands, and reviewed before anyone submits it.
+    await draftAndSaveNarrative(disputeRow.id);
+  } catch (err) {
+    console.error(`Narrative drafting failed for dispute ${dispute.id}:`, err);
   }
 
   return NextResponse.json({ received: true });

@@ -20,6 +20,10 @@ model Merchant {
   encryptedStripeApiKey   String
   // Per-merchant webhook endpoint signing secret (whsec_...), encrypted the same way.
   encryptedWebhookSecret  String
+  // Bearer token the merchant's own app sends to POST /api/merchants/[id]/delivery-proof
+  // (that endpoint isn't Stripe, so it needs its own auth). Generated at onboarding,
+  // shown once in the response, encrypted the same way as the keys above.
+  encryptedDeliveryProofToken String
   createdAt               DateTime   @default(now())
   updatedAt               DateTime   @updatedAt
   disputes                Dispute[]
@@ -64,6 +68,9 @@ model EvidenceSnapshot {
   deliveryProof   Json?
   // Week 3: LLM-drafted narrative, human-reviewed before submission to Stripe.
   narrative       String?
+  // Set when a human approves the current `narrative` text. Cleared whenever the
+  // narrative is regenerated, so an approval never silently covers different text.
+  narrativeApprovedAt DateTime?
   submittedAt     DateTime?
   collectedAt     DateTime @default(now())
 
