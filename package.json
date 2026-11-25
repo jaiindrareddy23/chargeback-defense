@@ -1,5 +1,5 @@
 {
-  "name": "chargeback-defense",
+  "name": "dispute-shield",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,30 +7,24 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "contract:emit": "prisma contract emit"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.14.0",
-    "@prisma/adapter-pg": "^7.10.1",
-    "@prisma/client": "^7.10.1",
-    "https-proxy-agent": "^9.1.0",
+    "@anthropic-ai/sdk": "^1.13.0",
+    "@prisma/client": "^6.19.3",
     "next": "16.4.6",
-    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "stripe": "^23.2.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@prisma/prisma7": "^7.10.1",
-    "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
-    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "tailwindcss": "4.3.3",
+    "prisma": "^6.19.3",
     "tsx": "^4.23.15",
     "typescript": "^5"
   }

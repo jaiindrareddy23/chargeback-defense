@@ -1,17 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+  /* This app is an always-fresh internal dashboard with no static content,
+   * so Cache Components' prerendering model buys nothing here — using the
+   * simpler previous caching model instead. */
 };
 
 export default nextConfig;

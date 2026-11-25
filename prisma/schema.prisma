@@ -1,7 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client"
@@ -10,96 +11,70 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Merchant {
-  id                      String     @id @default(uuid())
-  name                    String
-  contactEmail            String     @unique
-  // Stripe restricted/secret key, AES-256-GCM encrypted at rest (lib/crypto.ts). Never store plaintext.
-  encryptedStripeApiKey   String
-  // Per-merchant webhook endpoint signing secret (whsec_...), encrypted the same way.
-  encryptedWebhookSecret  String
-  // Bearer token the merchant's own app sends to POST /api/merchants/[id]/delivery-proof
-  // (that endpoint isn't Stripe, so it needs its own auth). Generated at onboarding,
-  // shown once in the response, encrypted the same way as the keys above.
-  encryptedDeliveryProofToken String
-  // Platform-side billing (OUR Stripe account, not the merchant's): set once the
-  // merchant has a payment method on file for the success fee. Null until then.
-  platformStripeCustomerId     String?    @unique
-  platformPaymentMethodId      String?
-  createdAt               DateTime   @default(now())
-  updatedAt               DateTime   @updatedAt
-  disputes                Dispute[]
-  successFees             SuccessFee[]
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String?
+  stripeAccountId   String?  @unique
+  stripeAccessToken String? // OAuth access token for the connected account (encrypt at rest in production)
+  apiKey            String   @unique @default(cuid()) // used to authenticate incoming access-event webhooks
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  @@map("merchants")
+  disputes     Dispute[]
+  accessEvents AccessEvent[]
+}
+
+enum DisputeStatus {
+  NEEDS_EVIDENCE
+  DRAFTING
+  READY_TO_SUBMIT
+  SUBMITTED
+  WON
+  LOST
 }
 
 model Dispute {
-  id               String         @id @default(uuid())
-  merchant         Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  merchantId       String
-  stripeDisputeId  String         @unique
-  stripeChargeId   String
-  amount           Int
-  currency         String
-  reason           String
-  // Stripe's dispute status, stored verbatim (e.g. needs_response, under_review, won, lost, warning_closed).
-  // Not a Prisma enum: Stripe adds new status values over time (their own SDK types this OtherString).
-  status           String
-  evidenceDueBy    DateTime?
-  // Raw Stripe event payload for audit/debugging.
-  rawEvent         Json
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  evidence         EvidenceSnapshot?
-  successFee       SuccessFee?
+  id                String        @id @default(cuid())
+  merchantId        String
+  merchant          Merchant      @relation(fields: [merchantId], references: [id])
+  stripeDisputeId   String        @unique
+  stripeChargeId    String
+  reason            String // Stripe dispute reason code, e.g. "product_not_received"
+  amount            Int // smallest currency unit
+  currency          String
+  status            DisputeStatus @default(NEEDS_EVIDENCE)
+  evidenceDueBy     DateTime?
+  customerEmail     String?
+  customerIp        String?
+  receiptUrl        String?
+  billingDetails    Json?
+  narrative         String? // LLM-drafted evidence narrative, human-reviewed before submit
+  narrativeApproved Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  @@index([merchantId])
-  @@map("disputes")
+  accessEvents AccessEvent[]
+
+  @@index([merchantId, status])
 }
 
-model EvidenceSnapshot {
-  id              String   @id @default(uuid())
-  dispute         Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
-  disputeId       String   @unique
-  customerEmail   String?
-  // Stripe's Charge/PaymentIntent don't expose the purchaser's IP; this is populated from the
-  // merchant's own order data (deliveryProof webhook, week 3) when they have it.
-  customerIp      String?
-  receiptUrl      String?
-  billingDetails  Json?
-  // Week 3: merchant-reported proof of delivery (e.g. "user logged in / downloaded" webhook).
-  deliveryProof   Json?
-  // Week 3: LLM-drafted narrative, human-reviewed before submission to Stripe.
-  narrative       String?
-  // Set when a human approves the current `narrative` text. Cleared whenever the
-  // narrative is regenerated, so an approval never silently covers different text.
-  narrativeApprovedAt DateTime?
-  submittedAt     DateTime?
-  collectedAt     DateTime @default(now())
+// Proof-of-delivery events merchants report (login, download, usage) used as dispute evidence.
+model AccessEvent {
+  id            String   @id @default(cuid())
+  merchantId    String
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  disputeId     String?
+  dispute       Dispute? @relation(fields: [disputeId], references: [id])
+  customerEmail String
+  eventType     String // e.g. "login", "download", "api_usage"
+  occurredAt    DateTime
+  metadata      Json?
+  createdAt     DateTime @default(now())
 
-  @@map("evidence_snapshots")
-}
-
-// One row per dispute won — the ~25% success fee charged on OUR Stripe account
-// against the merchant's saved payment method (never the merchant's own account).
-model SuccessFee {
-  id                    String    @id @default(uuid())
-  dispute               Dispute   @relation(fields: [disputeId], references: [id], onDelete: Cascade)
-  disputeId             String    @unique
-  merchant              Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  merchantId            String
-  amount                Int
-  currency              String
-  // pending | succeeded | failed | no_payment_method
-  status                String
-  stripePaymentIntentId String?   @unique
-  failureReason         String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-
-  @@index([merchantId])
-  @@map("success_fees")
+  @@index([merchantId, customerEmail])
+  @@index([disputeId])
 }

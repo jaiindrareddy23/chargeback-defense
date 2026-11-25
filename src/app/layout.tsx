@@ -13,18 +13,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chargeback Defense",
-  description:
-    "Automatic evidence collection and dispute drafting for Stripe-based course, SaaS, and membership sellers. Success-fee only — you only pay when we win.",
+  title: "Dispute Shield",
+  description: "Automated chargeback evidence for Stripe sellers",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }

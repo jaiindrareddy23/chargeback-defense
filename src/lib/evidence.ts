@@ -1,35 +1,80 @@
-import type Stripe from "stripe";
+import Stripe from "stripe";
+import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import type { Merchant } from "@/generated/prisma/client";
 
-/**
- * Pulls what Stripe actually has on a disputed charge: billing details, receipt, and
- * customer email. Stripe does NOT expose the purchaser's IP on the charge or payment
- * intent, so customerIp stays null here — it's filled in later by the merchant's own
- * "did the user log in/download?" webhook (Week 3), not by this collector.
- */
-export async function collectEvidence(stripe: Stripe, dispute: Stripe.Dispute, disputeRowId: string) {
-  const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
-  const charge = await stripe.charges.retrieve(chargeId, { expand: ["customer"] });
+// Pulls everything we can get automatically from Stripe for a dispute:
+// the charge, the customer on it, and a receipt link. This is the baseline
+// evidence every dispute gets; proof-of-access (login/download events) is
+// layered on top separately via AccessEvent records.
+export async function collectDisputeEvidence(
+  stripeDispute: Stripe.Dispute,
+  merchant: Merchant
+) {
+  const chargeId =
+    typeof stripeDispute.charge === "string"
+      ? stripeDispute.charge
+      : stripeDispute.charge?.id;
 
-  const customer = typeof charge.customer === "object" ? charge.customer : null;
-  const customerEmail =
-    charge.billing_details?.email ??
-    (customer && !customer.deleted ? customer.email : null) ??
-    charge.receipt_email ??
-    null;
+  let customerEmail: string | undefined;
+  let customerIp: string | undefined;
+  let receiptUrl: string | undefined;
+  let billingDetails: Stripe.Charge.BillingDetails | undefined;
 
-  await prisma.evidenceSnapshot.upsert({
-    where: { disputeId: disputeRowId },
+  if (chargeId) {
+    const charge = await stripe.charges.retrieve(
+      chargeId,
+      { expand: ["customer"] },
+      { stripeAccount: merchant.stripeAccountId ?? undefined }
+    );
+
+    receiptUrl = charge.receipt_url ?? undefined;
+    billingDetails = charge.billing_details ?? undefined;
+    customerIp = charge.metadata?.ip ?? undefined;
+
+    if (charge.billing_details?.email) {
+      customerEmail = charge.billing_details.email;
+    } else if (
+      charge.customer &&
+      typeof charge.customer !== "string" &&
+      !charge.customer.deleted
+    ) {
+      customerEmail = charge.customer.email ?? undefined;
+    }
+  }
+
+  return prisma.dispute.upsert({
+    where: { stripeDisputeId: stripeDispute.id },
     create: {
-      disputeId: disputeRowId,
+      merchantId: merchant.id,
+      stripeDisputeId: stripeDispute.id,
+      stripeChargeId: chargeId ?? "",
+      reason: stripeDispute.reason,
+      amount: stripeDispute.amount,
+      currency: stripeDispute.currency,
+      evidenceDueBy: stripeDispute.evidence_details?.due_by
+        ? new Date(stripeDispute.evidence_details.due_by * 1000)
+        : undefined,
       customerEmail,
-      receiptUrl: charge.receipt_url,
-      billingDetails: charge.billing_details as object,
+      customerIp,
+      receiptUrl,
+      billingDetails: billingDetails
+        ? JSON.parse(JSON.stringify(billingDetails))
+        : undefined,
     },
     update: {
+      reason: stripeDispute.reason,
+      amount: stripeDispute.amount,
+      currency: stripeDispute.currency,
+      evidenceDueBy: stripeDispute.evidence_details?.due_by
+        ? new Date(stripeDispute.evidence_details.due_by * 1000)
+        : undefined,
       customerEmail,
-      receiptUrl: charge.receipt_url,
-      billingDetails: charge.billing_details as object,
+      customerIp,
+      receiptUrl,
+      billingDetails: billingDetails
+        ? JSON.parse(JSON.stringify(billingDetails))
+        : undefined,
     },
   });
 }
