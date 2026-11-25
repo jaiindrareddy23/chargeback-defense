@@ -1,68 +1,91 @@
-import Image from "next/image";
+import { Suspense } from "react";
+import { prisma } from "@/lib/prisma";
 
-export default function Home() {
+function formatMoney(amountCents: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(amountCents / 100);
+}
+
+function statusTone(status: string) {
+  if (status === "won") return "bg-green-100 text-green-800";
+  if (status === "lost") return "bg-red-100 text-red-800";
+  if (status.startsWith("warning")) return "bg-amber-100 text-amber-800";
+  return "bg-zinc-100 text-zinc-700";
+}
+
+// Reads live rows on every request — not cacheable, so it's wrapped in <Suspense>
+// below rather than given `'use cache'`.
+async function DisputesTable() {
+  const disputes = await prisma.dispute.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      merchant: { select: { name: true } },
+      evidence: { select: { id: true, customerEmail: true, receiptUrl: true } },
+    },
+  });
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <>
+      <p className="mt-1 text-sm text-zinc-500">
+        {disputes.length} dispute{disputes.length === 1 ? "" : "s"} across all merchants.
+      </p>
+
+      <div className="mt-6 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+            <tr>
+              <th className="px-4 py-2">Merchant</th>
+              <th className="px-4 py-2">Amount</th>
+              <th className="px-4 py-2">Reason</th>
+              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2">Evidence due</th>
+              <th className="px-4 py-2">Evidence</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {disputes.map((d) => (
+              <tr key={d.id}>
+                <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-100">{d.merchant.name}</td>
+                <td className="px-4 py-2">{formatMoney(d.amount, d.currency)}</td>
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{d.reason.replaceAll("_", " ")}</td>
+                <td className="px-4 py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusTone(d.status)}`}>
+                    {d.status.replaceAll("_", " ")}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                  {d.evidenceDueBy ? new Date(d.evidenceDueBy).toLocaleDateString() : "—"}
+                </td>
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                  {d.evidence ? (d.evidence.customerEmail ?? "collected") : "pending"}
+                </td>
+              </tr>
+            ))}
+            {disputes.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
+                  No disputes yet. Onboard a merchant via POST /api/merchants, then point
+                  their Stripe webhook at /api/webhooks/stripe/[merchantId].
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <div className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
+      <main className="mx-auto max-w-5xl">
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Disputes</h1>
+        <Suspense fallback={<p className="mt-1 text-sm text-zinc-400">Loading disputes…</p>}>
+          <DisputesTable />
+        </Suspense>
       </main>
     </div>
   );

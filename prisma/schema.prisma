@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Merchant {
+  id                      String     @id @default(uuid())
+  name                    String
+  contactEmail            String     @unique
+  // Stripe restricted/secret key, AES-256-GCM encrypted at rest (lib/crypto.ts). Never store plaintext.
+  encryptedStripeApiKey   String
+  // Per-merchant webhook endpoint signing secret (whsec_...), encrypted the same way.
+  encryptedWebhookSecret  String
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+  disputes                Dispute[]
+
+  @@map("merchants")
+}
+
+model Dispute {
+  id               String         @id @default(uuid())
+  merchant         Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId       String
+  stripeDisputeId  String         @unique
+  stripeChargeId   String
+  amount           Int
+  currency         String
+  reason           String
+  // Stripe's dispute status, stored verbatim (e.g. needs_response, under_review, won, lost, warning_closed).
+  // Not a Prisma enum: Stripe adds new status values over time (their own SDK types this OtherString).
+  status           String
+  evidenceDueBy    DateTime?
+  // Raw Stripe event payload for audit/debugging.
+  rawEvent         Json
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  evidence         EvidenceSnapshot?
+
+  @@index([merchantId])
+  @@map("disputes")
+}
+
+model EvidenceSnapshot {
+  id              String   @id @default(uuid())
+  dispute         Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  disputeId       String   @unique
+  customerEmail   String?
+  // Stripe's Charge/PaymentIntent don't expose the purchaser's IP; this is populated from the
+  // merchant's own order data (deliveryProof webhook, week 3) when they have it.
+  customerIp      String?
+  receiptUrl      String?
+  billingDetails  Json?
+  // Week 3: merchant-reported proof of delivery (e.g. "user logged in / downloaded" webhook).
+  deliveryProof   Json?
+  // Week 3: LLM-drafted narrative, human-reviewed before submission to Stripe.
+  narrative       String?
+  submittedAt     DateTime?
+  collectedAt     DateTime @default(now())
+
+  @@map("evidence_snapshots")
+}
